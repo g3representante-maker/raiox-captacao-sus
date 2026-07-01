@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Detecta propostas de custeio MAC/PAP recém-pagas nos municípios da CONTROLADORIA
-(planilha Google) e prepara um resumo para envio por e-mail.
+Detecta MOVIMENTAÇÃO nas propostas de custeio MAC/PAP dos municípios da
+CONTROLADORIA (planilha Google) e prepara resumo para envio por e-mail.
 
-Estado persistido em estado_pagamentos.json (nuProposta -> vlPago já visto).
-Escreve alerta_email.txt (assunto+corpo) e imprime TEM_NOVOS=1/0.
-Uso no CI: os secrets de SMTP enviam o e-mail só quando TEM_NOVOS=1.
+Movimentação = qualquer mudança em: valor da proposta, valor pago, valor a pagar,
+processo constituído ou nº de pagamentos registrados (não só "pago").
+
+Anos monitorados = ano vigente + ano anterior (dinâmico).
+Estado em estado_pagamentos.json (nuProposta -> assinatura). Só envia quando há
+movimentação; consolida várias num único e-mail.
 """
 import json
 import sys
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -17,7 +21,8 @@ from fontes import consulta_fns_proposta as cf
 
 CTRL_URL = ("https://docs.google.com/spreadsheets/d/e/2PACX-1vTMcZpgiHbci8FynfSa"
             "Q4wojiPxplxmSKbzhrwoAz1kE9L6bXiaUyWWAZ16vtq9ZBBObHd0xGTdaf6w/pub?output=csv")
-ANOS = [2025, 2026]
+_Y = date.today().year
+ANOS = [_Y - 1, _Y]           # ano anterior + ano vigente (dinâmico)
 TIPOS = ["CUSTEIO MAC", "CUSTEIO PAP"]
 BASE = Path(__file__).parent
 ESTADO = BASE / "estado_pagamentos.json"
@@ -26,6 +31,34 @@ EMAIL = BASE / "alerta_email.txt"
 
 def _reais(v):
     return "R$ " + f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _sig(it):
+    return {
+        "prop": float(it.get("vlProposta") or 0),
+        "pago": float(it.get("vlPago") or 0),
+        "pagar": float(it.get("vlPagar") or 0),
+        "const": bool(it.get("constituidoProcesso")),
+        "npag": len(it.get("pagamentos") or []),
+    }
+
+
+def _descreve(old, new):
+    """Descreve a movimentação comparando assinatura antiga e nova."""
+    if old is None:
+        return None  # proposta nova entra no baseline sem alertar
+    msgs = []
+    if new["pago"] > old.get("pago", 0):
+        msgs.append(f"PAGAMENTO +{_reais(new['pago'] - old.get('pago', 0))} (pago total {_reais(new['pago'])})")
+    elif new["pago"] < old.get("pago", 0):
+        msgs.append(f"valor pago ajustado para {_reais(new['pago'])}")
+    if new["npag"] > old.get("npag", 0):
+        msgs.append("novo pagamento registrado")
+    if new["const"] and not old.get("const", False):
+        msgs.append("processo constituído")
+    if new["prop"] != old.get("prop", new["prop"]):
+        msgs.append(f"valor da proposta alterado: {_reais(old.get('prop', 0))} → {_reais(new['prop'])}")
+    return " · ".join(msgs) if msgs else None
 
 
 def ler_controladoria():
@@ -46,9 +79,13 @@ def ler_controladoria():
 
 def main():
     muns = ler_controladoria()
-    estado = json.loads(ESTADO.read_text()) if ESTADO.exists() else {}
+    raw = json.loads(ESTADO.read_text()) if ESTADO.exists() else {}
+    # migração de formato antigo ({nu: pago_float}) -> baseline sem alertar
+    estado = {}
+    for k, v in raw.items():
+        estado[k] = v if isinstance(v, dict) else None
     primeira_vez = not ESTADO.exists()
-    novos = []
+    movs = []
     for ibge, nome in muns:
         for ano in ANOS:
             for tp in TIPOS:
@@ -60,37 +97,32 @@ def main():
                     nu = str(it.get("nuProposta") or "")
                     if not nu:
                         continue
-                    pago = float(it.get("vlPago") or 0)
-                    ant = float(estado.get(nu, 0))
-                    if pago > ant and pago > 0 and not primeira_vez:
-                        novos.append({
-                            "mun": nome, "uf": it.get("sgUf", ""), "ibge": ibge,
-                            "nu": nu, "bloco": tp, "ano": ano,
-                            "pago": pago, "delta": pago - ant,
-                            "proposta": float(it.get("vlProposta") or 0),
-                        })
-                    estado[nu] = pago
+                    novo = _sig(it)
+                    antigo = estado.get(nu)
+                    desc = None if primeira_vez else _descreve(antigo, novo)
+                    if desc:
+                        movs.append({"mun": nome, "uf": it.get("sgUf", ""), "nu": nu,
+                                     "bloco": tp, "ano": ano, "desc": desc})
+                    estado[nu] = novo
 
-    ESTADO.write_text(json.dumps(estado, ensure_ascii=False, indent=0))
+    ESTADO.write_text(json.dumps(estado, ensure_ascii=False, separators=(",", ":")))
 
-    if novos:
-        linhas = ["ALERTA — Propostas de custeio MAC/PAP PAGAS", ""]
-        total = 0.0
-        for n in sorted(novos, key=lambda x: -x["delta"]):
-            total += n["delta"]
-            linhas.append(f"• {n['mun']}/{n['uf']} — {n['bloco']} {n['ano']}")
-            linhas.append(f"    Proposta {n['nu']} · pago agora {_reais(n['pago'])} (novo: {_reais(n['delta'])})")
-            linhas.append(f"    Detalhe: https://consultafns.saude.gov.br/#/proposta/{n['nu']}/detalhe")
-        linhas += ["", f"Total de novos pagamentos: {_reais(total)}",
-                   "", "Painel: https://g3healthservice.github.io/raiox-captacao-sus/",
-                   "— Robô Raio-X SUS · G3 Health Service"]
-        EMAIL.write_text("\n".join(linhas), encoding="utf-8")
-        print(f"TEM_NOVOS=1  ({len(novos)} pagamento(s))")
+    if movs:
+        L = [f"MOVIMENTAÇÃO — custeio MAC/PAP ({'/'.join(map(str, ANOS))})", ""]
+        for mv in movs:
+            L.append(f"• {mv['mun']}/{mv['uf']} — {mv['bloco']} {mv['ano']}")
+            L.append(f"    {mv['desc']}")
+            L.append(f"    Proposta {mv['nu']} · https://consultafns.saude.gov.br/#/proposta/{mv['nu']}/detalhe")
+        L += ["", f"Total de movimentações: {len(movs)}",
+              "", "Painel: https://g3healthservice.github.io/raiox-captacao-sus/",
+              "— Robô Raio-X SUS · G3 Health Service"]
+        EMAIL.write_text("\n".join(L), encoding="utf-8")
+        print(f"TEM_NOVOS=1  ({len(movs)} movimentação(ões))")
     else:
         if EMAIL.exists():
             EMAIL.unlink()
-        motivo = "primeira execução (baseline registrado)" if primeira_vez else "sem novos pagamentos"
-        print(f"TEM_NOVOS=0  ({motivo}; {len(muns)} municípios monitorados)")
+        motivo = "baseline registrado" if primeira_vez else "sem movimentação"
+        print(f"TEM_NOVOS=0  ({motivo}; {len(muns)} municípios · anos {ANOS})")
 
 
 if __name__ == "__main__":
