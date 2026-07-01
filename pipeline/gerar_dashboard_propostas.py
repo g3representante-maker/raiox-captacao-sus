@@ -476,16 +476,18 @@ function pdf(){
 }
 function csv(){
   const m=cur;if(!m)return;const ay=yr();const cc=comps(m,ay);const rr=recuperavel(cc);
+  const mo=v=>'"R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'"';
+  const tx=v=>'="'+v+'"';
   let c='RASTREIO CAPTAÇÃO SUS — G3\n'+m.mun+'/'+m.uf+';IBGE '+m.ibge+'\n\n';
   c+='NUMERO UNICO ('+ay+');Identificado;Recuperavel;Risco perda\n';
-  c+='1 Propostas paradas MAC/PAP;'+cc.gap.toFixed(2)+';'+(cc.gap*0.6).toFixed(2)+';'+(cc.gap*0.4).toFixed(2)+'\n';
-  c+='2 Desconto FAF MAC do ano;'+cc.desc.toFixed(2)+';'+(cc.desc*0.5).toFixed(2)+';'+(cc.desc*0.5).toFixed(2)+'\n';
-  c+='TOTAL numero unico;'+cc.total.toFixed(2)+';'+rr.toFixed(2)+';'+(cc.total-rr).toFixed(2)+'\n';
-  c+='Contexto descontos 2012-22 (nao somado);'+cc.hist.toFixed(2)+';;\n\n';
+  c+='1 Propostas paradas MAC/PAP;'+mo(cc.gap)+';'+mo(cc.gap*0.6)+';'+mo(cc.gap*0.4)+'\n';
+  c+='2 Desconto FAF MAC do ano;'+mo(cc.desc)+';'+mo(cc.desc*0.5)+';'+mo(cc.desc*0.5)+'\n';
+  c+='TOTAL numero unico;'+mo(cc.total)+';'+mo(rr)+';'+mo(cc.total-rr)+'\n';
+  c+='Contexto descontos 2012-22 (nao somado);'+mo(cc.hist)+';;\n\n';
   c+='Ano;Bloco;Solicitado;Recebido;A recuperar\n';
-  D.anos.forEach(a=>{['mac','pap'].forEach(b=>{const d=blocoYr(m,b,a);c+=a+';'+b.toUpperCase()+';'+d.solicitado.toFixed(2)+';'+d.pago.toFixed(2)+';'+d.recuperar.toFixed(2)+'\n';});});
+  D.anos.forEach(a=>{['mac','pap'].forEach(b=>{const d=blocoYr(m,b,a);c+=a+';'+b.toUpperCase()+';'+mo(d.solicitado)+';'+mo(d.pago)+';'+mo(d.recuperar)+'\n';});});
   c+='\nPropostas individuais '+ANO+'\nBloco;NuProposta;Solicitado;Recebido;A recuperar;Situacao\n';
-  (m.props||[]).forEach(p=>{c+=p.b.toUpperCase()+';'+p.nu+';'+p.prop.toFixed(2)+';'+p.pago.toFixed(2)+';'+Math.max(0,p.prop-p.pago).toFixed(2)+';'+p.st+'\n';});
+  (m.props||[]).forEach(p=>{c+=p.b.toUpperCase()+';'+tx(p.nu)+';'+mo(p.prop)+';'+mo(p.pago)+';'+mo(Math.max(0,p.prop-p.pago))+';'+p.st+'\n';});
   const bl=new Blob(['﻿'+c],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='Rastreio_'+m.mun.replace(/ /g,'_')+'_'+m.uf+'.csv';a.click();
 }
 
@@ -509,8 +511,6 @@ function whatsappRanking(){
   L.push('');
   L.push('_Número único = propostas MAC/PAP paradas + desconto FAF do ano._');
   L.push('Fonte: dados oficiais (Consulta FNS + Portal FNS)');
-  L.push('');
-  L.push('📞 *G3 Health Service* · +55 61 99255-7690');
   const text=encodeURIComponent(L.join('\n'));
   window.open('https://wa.me/?text='+text,'_blank');
 }
