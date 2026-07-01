@@ -144,6 +144,7 @@ table.gtbl tr.mrow:hover{background:#f0f7fb}
 <div class="tabs">
   <div class="tab on" data-v="overview" onclick="tab('overview')">Visão geral (ranking)</div>
   <div class="tab" data-v="detail" onclick="tab('detail')">Detalhe do município</div>
+  <div class="tab" data-v="controladoria" onclick="tab('controladoria')">Controladoria 🔒</div>
   <div class="tab" data-v="method" onclick="tab('method')">Assessoria - Proposta de Trabalho</div>
 </div>
 
@@ -179,6 +180,18 @@ table.gtbl tr.mrow:hover{background:#f0f7fb}
 </div>
 
 <div class="view" id="v-detail"><div class="empty" id="detEmpty">Selecione um município na aba <b>Visão geral</b>.</div><div id="detBody" style="display:none"></div></div>
+
+<div class="view" id="v-controladoria">
+  <div id="ctrlLock" style="max-width:420px;margin:40px auto;background:#fff;border:1px solid #e1e6ec;border-radius:12px;padding:26px 28px;text-align:center">
+    <div style="font-size:30px">🔒</div>
+    <h3 style="margin:8px 0 4px;color:#0e3d59">Controladoria — acesso restrito</h3>
+    <div style="font-size:12px;color:#8a97a5;margin-bottom:14px">Área interna da equipe G3. Informe a senha para visualizar o pipeline de municípios.</div>
+    <input id="ctrlPw" type="password" placeholder="Senha" style="width:100%;padding:9px 11px;border:1px solid #c3ccd6;border-radius:7px;font-size:13px" onkeydown="if(event.key==='Enter')ctrlUnlock()">
+    <div id="ctrlErr" style="color:#c0392b;font-size:11px;height:14px;margin-top:4px"></div>
+    <button class="btn btn-live" style="margin-top:8px;width:100%" onclick="ctrlUnlock()">Entrar</button>
+  </div>
+  <div id="ctrlBody" style="display:none"></div>
+</div>
 
 <div class="view" id="v-method">
   <div class="propbox">
@@ -312,6 +325,110 @@ document.getElementById('ordSel').addEventListener('change',function(){sortKey=t
 
 function tab(v){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));document.getElementById('v-'+v).classList.add('on');}
 
+/* ===== CONTROLADORIA (lê planilha Google publicada) ===== */
+const CTRL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTMcZpgiHbci8FynfSaQ4wojiPxplxmSKbzhrwoAz1kE9L6bXiaUyWWAZ16vtq9ZBBObHd0xGTdaf6w/pub?output=csv';
+const CTRL_PW='g3saude';
+let CTRL={}, ctrlLoaded=false, ctrlUnlocked=false;
+function parseCSV(t){
+  const rows=[];let i=0,f='',row=[],q=false;
+  while(i<t.length){const c=t[i];
+    if(q){ if(c=='"'){ if(t[i+1]=='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else { if(c=='"')q=true; else if(c==',' ){row.push(f);f='';} else if(c=='\n'){row.push(f);rows.push(row);row=[];f='';} else if(c!='\r')f+=c; }
+    i++;
+  }
+  if(f.length||row.length){row.push(f);rows.push(row);}
+  return rows;
+}
+function loadCtrl(){
+  return fetch(CTRL_URL,{cache:'no-store'}).then(r=>r.text()).then(txt=>{
+    const rows=parseCSV(txt).filter(r=>r.length>1&&r.join('').trim());
+    const hdr=rows.shift().map(h=>h.trim().toLowerCase());
+    const idx=n=>hdr.findIndex(h=>h.startsWith(n));
+    const iI=idx('ibge'),iR=idx('responsavel'),iS=idx('status'),iD=idx('data_inicio'),iPe=idx('pct_equipe'),iPg=idx('pct_g3'),iV=idx('valor'),iO=idx('observ'),iM=idx('municipio');
+    CTRL={};
+    rows.forEach(r=>{
+      const ibge=(r[iI]||'').trim().slice(0,6);
+      if(!ibge)return;
+      CTRL[ibge]={responsavel:(r[iR]||'').trim(),status:(r[iS]||'').trim(),data_inicio:(r[iD]||'').trim(),
+        pct_equipe:(r[iPe]||'').trim(),pct_g3:(r[iPg]||'').trim(),valor:iV>=0?(r[iV]||'').trim():'',observacoes:iO>=0?(r[iO]||'').trim():'',mun:(r[iM]||'').trim()};
+    });
+    ctrlLoaded=true;
+  });
+}
+function ctrlUnlock(){
+  const v=document.getElementById('ctrlPw').value;
+  if(v!==CTRL_PW){document.getElementById('ctrlErr').textContent='Senha incorreta.';return;}
+  ctrlUnlocked=true;
+  document.getElementById('ctrlLock').style.display='none';
+  document.getElementById('ctrlBody').style.display='block';
+  document.getElementById('ctrlBody').innerHTML='<div style="padding:20px;color:#8a97a5">Carregando planilha...</div>';
+  const go=()=>renderCtrl();
+  ctrlLoaded?go():loadCtrl().then(go).catch(()=>{document.getElementById('ctrlBody').innerHTML='<div style="padding:20px;color:#c0392b">Não foi possível ler a planilha. Confira se está publicada na web.</div>';});
+  // atualiza o detalhe se já houver município aberto
+  if(cur)openDetail(cur);
+}
+function statusColor(s){s=(s||'').toLowerCase();
+  if(s.includes('conclu')||s.includes('contrat'))return['#d4efdf','#1e8449'];
+  if(s.includes('process'))return['#d6eaf8','#2471a3'];
+  if(s.includes('anális')||s.includes('analis'))return['#fdebd0','#ca6f1e'];
+  if(s.includes('prospec'))return['#eae5f3','#7d3c98'];
+  return['#eef1f5','#5f6b78'];}
+function renderCtrl(){
+  const entries=Object.entries(CTRL);
+  const byMun=new Map(D.muns.map(m=>[String(m.ibge),m]));
+  const resps=[...new Set(entries.map(([k,v])=>v.responsavel).filter(Boolean))].sort();
+  const stats=[...new Set(entries.map(([k,v])=>v.status).filter(Boolean))].sort();
+  document.getElementById('ctrlBody').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div><h3 style="color:#0e3d59;margin:0">Controladoria — pipeline de municípios</h3>
+        <div style="font-size:11px;color:#8a97a5">${entries.length} município(s) em acompanhamento · fonte: planilha G3</div></div>
+      <div class="toolbar" style="margin:0">
+        <select id="ctrlResp"><option value="">Todos responsáveis</option>${resps.map(r=>'<option>'+r+'</option>').join('')}</select>
+        <select id="ctrlStat"><option value="">Todos status</option>${stats.map(s=>'<option>'+s+'</option>').join('')}</select>
+        <button class="btn btn-x" onclick="loadCtrl().then(renderCtrl)">↻ Atualizar</button>
+      </div>
+    </div>
+    <table class="gtbl"><thead><tr><th>Município</th><th>Responsável</th><th>Status</th><th>Início</th><th class="num">Nº único (custeio)</th><th class="num">Recuperável</th></tr></thead><tbody id="ctrlRows"></tbody></table>`;
+  const draw=()=>{
+    const fr=document.getElementById('ctrlResp').value, fs=document.getElementById('ctrlStat').value, a=yr();
+    const tb=document.getElementById('ctrlRows');tb.innerHTML='';
+    entries.filter(([k,v])=>(!fr||v.responsavel===fr)&&(!fs||v.status===fs))
+      .map(([k,v])=>({k,v,m:byMun.get(k)}))
+      .sort((x,y)=>(x.m?numUnico(y.m,a):0)-(y.m?numUnico(x.m,a):0))
+      .forEach(({k,v,m})=>{
+        const sc=statusColor(v.status);
+        const nu=m?numUnico(m,a):0, rc=m?recuperavel(comps(m,a)):0;
+        const tr=document.createElement('tr');tr.className='mrow';if(m)tr.onclick=()=>openDetail(m);
+        tr.innerHTML=`<td><b>${v.mun||(m?m.mun:k)}</b> <span style="color:#aab4bf">${m?m.uf:''}</span></td>
+          <td>${v.responsavel||'—'}</td>
+          <td><span class="pill" style="background:${sc[0]};color:${sc[1]}">${v.status||'—'}</span></td>
+          <td style="color:#5f6b78">${v.data_inicio||'—'}</td>
+          <td class="num" style="color:#7d3c98;font-weight:700">${m?fmtK(nu):'—'}</td>
+          <td class="num" style="color:#1e8449">${m?fmtK(rc):'—'}</td>`;
+        tb.appendChild(tr);
+      });
+    if(!tb.children.length)tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#aab4bf;padding:16px">Nenhum município neste filtro.</td></tr>';
+  };
+  document.getElementById('ctrlResp').onchange=draw;document.getElementById('ctrlStat').onchange=draw;draw();
+}
+function ctrlPanel(m){
+  if(!ctrlUnlocked)return '';
+  const c=CTRL[String(m.ibge).slice(0,6)];
+  if(!c)return `<div class="panel" style="margin-bottom:14px;border-left:3px solid #c3ccd6"><h3>Responsável (controladoria)</h3><div style="font-size:12px;color:#8a97a5">Município ainda não cadastrado na controladoria. Adicione na planilha G3.</div></div>`;
+  const sc=statusColor(c.status);
+  return `<div class="panel" style="margin-bottom:14px;border-left:3px solid ${sc[1]}">
+    <h3>Responsável (controladoria)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;font-size:12px">
+      <div><div style="color:#8a97a5;font-size:10px;text-transform:uppercase">Responsável</div><b>${c.responsavel||'—'}</b></div>
+      <div><div style="color:#8a97a5;font-size:10px;text-transform:uppercase">Status</div><span class="pill" style="background:${sc[0]};color:${sc[1]}">${c.status||'—'}</span></div>
+      <div><div style="color:#8a97a5;font-size:10px;text-transform:uppercase">Início da assessoria</div><b>${c.data_inicio||'—'}</b></div>
+      <div><div style="color:#8a97a5;font-size:10px;text-transform:uppercase">Consultoria</div><b>${c.pct_equipe||'?'}% equipe · ${c.pct_g3||'?'}% G3</b></div>
+      ${c.valor?`<div><div style="color:#8a97a5;font-size:10px;text-transform:uppercase">Valor programas</div><b>${c.valor}</b></div>`:''}
+    </div>
+    ${c.observacoes?`<div style="margin-top:8px;font-size:11px;color:#5f6b78"><b>Obs.:</b> ${c.observacoes}</div>`:''}
+  </div>`;
+}
+
 let charts={};
 function openDetail(m){
   cur=m;tab('detail');
@@ -353,6 +470,7 @@ function openDetail(m){
         <div class="hcomp" style="opacity:.8"><span class="hcl">Contexto: descontos 2012–22 (acumulado)</span><span class="hcv">${fmt(c.hist)}</span></div>
       </div>
     </div>
+    ${ctrlPanel(m)}
     <div class="blocos">
       ${blocoCard('MAC','mac',mac)}
       ${blocoCard('PAP','pap',pap)}
