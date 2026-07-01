@@ -327,6 +327,7 @@ function tab(v){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle(
 
 /* ===== CONTROLADORIA (lê planilha Google publicada) ===== */
 const CTRL_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTMcZpgiHbci8FynfSaQ4wojiPxplxmSKbzhrwoAz1kE9L6bXiaUyWWAZ16vtq9ZBBObHd0xGTdaf6w/pub?output=csv';
+const CTRL_EDIT_URL='https://docs.google.com/spreadsheets/d/1MKxBhNTLL6mvKhrQDxAnrxOo7a5H5ACyYtEK8cXSnxo/edit';
 const CTRL_PW='g3saude';
 let CTRL={}, ctrlLoaded=false, ctrlUnlocked=false;
 function parseCSV(t){
@@ -385,6 +386,7 @@ function renderCtrl(){
       <div class="toolbar" style="margin:0">
         <select id="ctrlResp"><option value="">Todos responsáveis</option>${resps.map(r=>'<option>'+r+'</option>').join('')}</select>
         <select id="ctrlStat"><option value="">Todos status</option>${stats.map(s=>'<option>'+s+'</option>').join('')}</select>
+        <a class="btn btn-live" href="${CTRL_EDIT_URL}" target="_blank" style="text-decoration:none">✏️ Editar planilha</a>
         <button class="btn btn-x" onclick="loadCtrl().then(renderCtrl)">↻ Atualizar</button>
       </div>
     </div>
@@ -691,8 +693,8 @@ function propostaPDF(){
   const popMun = cur ? (cur.pop||0) : 0;
   const inv = investimento(popMun);
   const investHTML = popMun
-    ? `Para o porte deste município (<b>${popMun.toLocaleString('pt-BR')} habitantes</b> · faixa ${faixaPop(popMun)}), o honorário fixo mensal em contrato de assessoria é de <b>${fmt(inv)}/mês</b>, sem acréscimo de percentual de êxito, pois a assessoria baseia-se em <b>eficiência por contrato</b> e não por produtividade.`
-    : `O honorário fixo mensal em contrato de assessoria varia conforme o porte do município, <b>sem acréscimo de percentual de êxito</b>: a assessoria baseia-se em eficiência por contrato e não por produtividade. Selecione o município na aba Detalhe para gravar o valor exato.`;
+    ? `Para o porte deste município (<b>${popMun.toLocaleString('pt-BR')} habitantes</b> · faixa ${faixaPop(popMun)}), o honorário fixo mensal de referência é de <b>${fmt(inv)}/mês</b>, no modelo de <b>parte fixa pelo diagnóstico/plano + êxito sobre o recuperado — alinha o interesse e remove o risco percebido pelo gestor.</b>`
+    : `O honorário fixo mensal varia conforme o porte do município, no modelo de <b>parte fixa pelo diagnóstico/plano + êxito sobre o recuperado — alinha o interesse e remove o risco percebido pelo gestor.</b> Selecione o município na aba Detalhe para gravar o valor exato.`;
   // diagnóstico preliminar com números reais se houver município selecionado
   let diagBlock='';
   if(cur){
