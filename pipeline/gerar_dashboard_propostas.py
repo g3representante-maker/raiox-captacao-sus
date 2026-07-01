@@ -482,7 +482,7 @@ function renderCtrl(){
       <div style="font-size:10.5px;color:#8a97a5;margin-top:6px">Selecione o município → o <b>IBGE preenche sozinho</b>. Se já estiver na lista, os campos <b>carregam para edição</b>; se for novo, a <b>data de criação entra automática (hoje)</b>. Preencha/edite e clique <b>💾 Salvar</b>.</div>
     </div>
     <datalist id="muniList">${D.muns.map(m=>'<option value="'+m.mun+'/'+m.uf+'">').join('')}</datalist>
-    <datalist id="respList"><option value="Gerson Gomes"><option value="Chicao"><option value="Fernando Mota"></datalist>
+    <datalist id="respList"><option value="Gerson Gomes"><option value="Chicao"><option value="Fernando Mota"><option value="Vicente"><option value="Rodolfo Pacheco"><option value="Mateus Costa"></datalist>
     <datalist id="statList"><option value="Prospecção"><option value="Em análise"><option value="Em processo"><option value="Contratado"><option value="Concluído"></datalist>
     <table class="gtbl"><thead><tr><th>Município</th><th>Responsável</th><th>Status</th><th>Criado em</th><th>Observações</th><th class="num">Nº único (custeio)</th><th class="num">Recuperável</th><th></th></tr></thead><tbody id="ctrlRows"></tbody></table>`;
   const draw=()=>{
