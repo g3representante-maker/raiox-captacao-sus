@@ -380,10 +380,25 @@ function statusColor(s){s=(s||'').toLowerCase();
   if(s.includes('prospec'))return['#eae5f3','#7d3c98'];
   return['#eef1f5','#5f6b78'];}
 const CTRL_ADDF='padding:7px 9px;border:1px solid #c3ccd6;border-radius:6px;font-size:12px;width:100%;background:#fff';
+function _hoje(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function ctrlSetIbge(){
   const lbl=document.getElementById('addMun').value.trim();
   const m=D.muns.find(x=>(x.mun+'/'+x.uf)===lbl);
-  document.getElementById('addIbge').value=m?m.ibge:'';
+  const ibge=m?m.ibge:'';
+  const $=id=>document.getElementById(id);
+  $('addIbge').value=ibge;
+  const c=ibge?CTRL[ibge]:null, msg=$('addMsg');
+  if(c){ // já existe -> modo EDIÇÃO: pré-preenche os campos
+    $('addResp').value=c.responsavel||'';
+    $('addStat').value=c.status||'';
+    $('addData').value=(c.data_inicio||'').slice(0,10);
+    $('addObs').value=c.observacoes||'';
+    if(msg){msg.style.color='#2471a3';msg.textContent='✏️ Editando '+(c.mun||lbl)+' — altere e clique Salvar.';}
+  } else if(ibge){ // novo lead -> data de criação AUTOMÁTICA (hoje)
+    $('addResp').value='';$('addStat').value='';$('addObs').value='';
+    $('addData').value=_hoje();
+    if(msg){msg.textContent='';}
+  }
 }
 function _csvCell(x){x=String(x||'');return /[",;\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;}
 function ctrlCopiarLinha(){
@@ -455,21 +470,20 @@ function renderCtrl(){
         <div><div style="font-size:10px;color:#8a97a5;text-transform:uppercase;margin-bottom:2px">IBGE (automático)</div><input id="addIbge" readonly placeholder="—" style="${CTRL_ADDF};background:#eef1f5;font-weight:700;color:#0e3d59"></div>
         <div><div style="font-size:10px;color:#8a97a5;text-transform:uppercase;margin-bottom:2px">Responsável</div><input id="addResp" list="respList" placeholder="Gerson / Chicao / Fernando" style="${CTRL_ADDF}"></div>
         <div><div style="font-size:10px;color:#8a97a5;text-transform:uppercase;margin-bottom:2px">Status</div><input id="addStat" list="statList" placeholder="Em análise..." style="${CTRL_ADDF}"></div>
-        <div><div style="font-size:10px;color:#8a97a5;text-transform:uppercase;margin-bottom:2px">Início</div><input id="addData" type="date" style="${CTRL_ADDF}"></div>
+        <div><div style="font-size:10px;color:#8a97a5;text-transform:uppercase;margin-bottom:2px">Data de criação (auto)</div><input id="addData" type="date" style="${CTRL_ADDF}"></div>
         <div style="grid-column:1/-1"><div style="font-size:10px;color:#8a97a5;text-transform:uppercase;margin-bottom:2px">Observações / andamento</div><input id="addObs" placeholder="O que foi feito, próximos passos..." style="${CTRL_ADDF}"></div>
       </div>
       <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${CTRL_SAVE_URL?'<button class="btn btn-live" style="background:#1e8449" onclick="ctrlSalvar()">💾 Salvar na planilha</button>':''}
-        <button class="btn btn-x" onclick="ctrlCopiarLinha()">📋 Copiar linha p/ planilha</button>
+        ${CTRL_SAVE_URL?'<button class="btn btn-live" style="background:#1e8449" onclick="ctrlSalvar()">💾 Salvar na planilha</button>':'<button class="btn btn-x" onclick="ctrlCopiarLinha()">📋 Copiar linha p/ planilha</button>'}
         <a class="btn btn-live" href="${CTRL_EDIT_URL}" target="_blank" style="text-decoration:none">✏️ Abrir planilha</a>
         <span id="addMsg" style="font-size:11px"></span>
       </div>
-      <div style="font-size:10.5px;color:#8a97a5;margin-top:6px">Selecione o município → o <b>IBGE preenche sozinho</b>. Clique "Copiar linha", abra a planilha e cole numa linha nova. Depois clique ↻ Atualizar.</div>
+      <div style="font-size:10.5px;color:#8a97a5;margin-top:6px">Selecione o município → o <b>IBGE preenche sozinho</b>. Se já estiver na lista, os campos <b>carregam para edição</b>; se for novo, a <b>data de criação entra automática (hoje)</b>. Preencha/edite e clique <b>💾 Salvar</b>.</div>
     </div>
     <datalist id="muniList">${D.muns.map(m=>'<option value="'+m.mun+'/'+m.uf+'">').join('')}</datalist>
     <datalist id="respList"><option value="Gerson Gomes"><option value="Chicao"><option value="Fernando Mota"></datalist>
     <datalist id="statList"><option value="Prospecção"><option value="Em análise"><option value="Em processo"><option value="Contratado"><option value="Concluído"></datalist>
-    <table class="gtbl"><thead><tr><th>Município</th><th>Responsável</th><th>Status</th><th>Início</th><th>Observações</th><th class="num">Nº único (custeio)</th><th class="num">Recuperável</th><th></th></tr></thead><tbody id="ctrlRows"></tbody></table>`;
+    <table class="gtbl"><thead><tr><th>Município</th><th>Responsável</th><th>Status</th><th>Criado em</th><th>Observações</th><th class="num">Nº único (custeio)</th><th class="num">Recuperável</th><th></th></tr></thead><tbody id="ctrlRows"></tbody></table>`;
   const draw=()=>{
     const fr=document.getElementById('ctrlResp').value, fs=document.getElementById('ctrlStat').value, a=yr();
     const tb=document.getElementById('ctrlRows');tb.innerHTML='';
