@@ -210,7 +210,12 @@ anoSel.value=D.ano_drill;
 // uf select
 [...new Set(D.muns.map(m=>m.uf))].sort().forEach(u=>{const o=document.createElement('option');o.value=u;o.textContent=u;document.getElementById('ufSel').appendChild(o);});
 
-function blocoYr(m,b,a){return (m.anos[a]||{})[b]||{solicitado:0,pago:0,recuperar:0};}
+function blocoYr(m,b,a){
+  const o=(m.anos[a]||{})[b]||{};
+  const cu=o.cust||{sol:0,pago:0};
+  const sol=cu.sol||0, pago=cu.pago||0;
+  return {solicitado:sol, pago:pago, recuperar:Math.max(0,sol-pago), cust:cu};
+}
 function totYr(m,a){const mac=blocoYr(m,'mac',a),pap=blocoYr(m,'pap',a);return{sol:mac.solicitado+pap.solicitado,apr:mac.pago+pap.pago,rec:mac.recuperar+pap.recuperar};}
 function fafYr(m,a){return ((m.faf||{}).years||{})[a]||{desc:0,mac_l:0,pap_l:0,total_l:0};}
 function saldo(m){return (m.faf||{}).saldo||0;}
@@ -377,8 +382,7 @@ function openDetail(m){
 }
 function blocoCard(label,b,d){
   const p=pct(d.pago,d.solicitado);
-  const cust=d.cust||{sol:0,pago:0}, incr=d.incr||{sol:0,pago:0};
-  return `<div class="bloco"><h3><span class="tag ${b}">${label}</span> Recursos ${label} (custeio + incremento)</h3>
+  return `<div class="bloco"><h3><span class="tag ${b}">${label}</span> Custeio ${label} <span style="font-weight:400;color:#aab4bf;font-size:11px">(fundo a fundo)</span></h3>
     <div class="k3">
       <div class="kk s"><div class="l">Solicitado</div><div class="v">${fmtK(d.solicitado)}</div></div>
       <div class="kk a"><div class="l">Recebido</div><div class="v">${fmtK(d.pago)}</div></div>
@@ -386,11 +390,6 @@ function blocoCard(label,b,d){
     </div>
     <div style="font-size:11px;color:#6b7785">Aprovação: <b>${p}%</b></div>
     <div class="bar-mini" style="height:8px"><i style="width:${p}%;background:${b==='mac'?'#1a5276':'#1e8449'}"></i></div>
-    <table style="width:100%;font-size:10.5px;margin-top:9px;border-collapse:collapse;color:#5a6671">
-      <tr style="color:#8a97a5"><td></td><td style="text-align:right">Solicitado</td><td style="text-align:right">Recebido</td><td style="text-align:right">A recuperar</td></tr>
-      <tr><td><b>Custeio</b> <span style="color:#aab4bf">(fundo a fundo)</span></td><td style="text-align:right">${fmtK(cust.sol)}</td><td style="text-align:right;color:#1e8449">${fmtK(cust.pago)}</td><td style="text-align:right;color:#ca6f1e">${fmtK(Math.max(0,cust.sol-cust.pago))}</td></tr>
-      <tr><td><b>Incremento</b> <span style="color:#aab4bf">(emenda)</span></td><td style="text-align:right">${fmtK(incr.sol)}</td><td style="text-align:right;color:#1e8449">${fmtK(incr.pago)}</td><td style="text-align:right;color:#ca6f1e">${fmtK(Math.max(0,incr.sol-incr.pago))}</td></tr>
-    </table>
   </div>`;
 }
 function propTable(props){
@@ -488,7 +487,12 @@ function csv(){
   D.anos.forEach(a=>{['mac','pap'].forEach(b=>{const d=blocoYr(m,b,a);c+=a+';'+b.toUpperCase()+';'+mo(d.solicitado)+';'+mo(d.pago)+';'+mo(d.recuperar)+'\n';});});
   c+='\nPropostas individuais '+ANO+'\nBloco;NuProposta;Solicitado;Recebido;A recuperar;Situacao\n';
   (m.props||[]).forEach(p=>{c+=p.b.toUpperCase()+';'+tx(p.nu)+';'+mo(p.prop)+';'+mo(p.pago)+';'+mo(Math.max(0,p.prop-p.pago))+';'+p.st+'\n';});
-  const bl=new Blob(['﻿'+c],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='Rastreio_'+m.mun.replace(/ /g,'_')+'_'+m.uf+'.csv';a.click();
+  c+='\nCONSULTORIA (sobre o recuperável estimado = '+mo(rr).replace(/"/g,'')+')\nParte;Percentual;Valor\n';
+  c+='Equipe 01;15%;'+mo(rr*0.15)+'\n';
+  c+='Assessoria G3;5%;'+mo(rr*0.05)+'\n';
+  c+='Total consultoria;20%;'+mo(rr*0.20)+'\n';
+  c+='\nCONTATOS G3\nChicao;+55 11 98165-2727\nFernando Mota;+55 22 99830-9015\nGerson Gomes;+55 61 99255-7690\nE-mail;g3.healthservice@proton.me\n';
+  const bl=new Blob(['﻿'+c],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='Projeto_'+m.mun.replace(/ /g,'_')+'_'+m.uf+'.csv';a.click();
 }
 
 // ---- Enviar o ranking filtrado (top municípios) pelo WhatsApp ----
