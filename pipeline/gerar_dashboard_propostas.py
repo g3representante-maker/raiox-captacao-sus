@@ -345,6 +345,22 @@ function parseCSV(t){
   if(f.length||row.length){row.push(f);rows.push(row);}
   return rows;
 }
+/* gravações recentes (localStorage) — o CSV publicado do Google demora ~min para
+   refletir; este overlay mantém o lead na tela até o CSV alcançar (TTL 15 min) */
+const PEND_TTL=15*60*1000;
+function _pendGet(){try{return JSON.parse(localStorage.getItem('ctrlPend')||'{}')}catch(e){return{}}}
+function _pendSet(p){try{localStorage.setItem('ctrlPend',JSON.stringify(p))}catch(e){}}
+function _pendMarcar(ibge,dados){const p=_pendGet();p[ibge]={ts:Date.now(),del:false,v:dados};_pendSet(p);}
+function _pendMarcarDel(ibge){const p=_pendGet();p[ibge]={ts:Date.now(),del:true};_pendSet(p);}
+function _pendAplicar(){
+  const p=_pendGet();const now=Date.now();let mudou=false;
+  for(const k in p){
+    if(now-p[k].ts>PEND_TTL){delete p[k];mudou=true;continue;}
+    if(p[k].del){ if(CTRL[k]){delete CTRL[k];} else {delete p[k];mudou=true;} }
+    else CTRL[k]=Object.assign({},CTRL[k]||{},p[k].v);
+  }
+  if(mudou)_pendSet(p);
+}
 function loadCtrl(){
   return fetch(CTRL_URL+'&_cb='+Date.now(),{cache:'no-store'}).then(r=>r.text()).then(txt=>{
     const rows=parseCSV(txt).filter(r=>r.length>1&&r.join('').trim());
@@ -358,6 +374,7 @@ function loadCtrl(){
       CTRL[ibge]={responsavel:(r[iR]||'').trim(),status:(r[iS]||'').trim(),data_inicio:(r[iD]||'').trim(),
         pct_equipe:(r[iPe]||'').trim(),pct_g3:(r[iPg]||'').trim(),valor:iV>=0?(r[iV]||'').trim():'',observacoes:iO>=0?(r[iO]||'').trim():'',mun:(r[iM]||'').trim()};
     });
+    _pendAplicar();  // sobrepõe gravações recentes ainda não refletidas no CSV
     ctrlLoaded=true;
   });
 }
@@ -372,6 +389,16 @@ function ctrlUnlock(){
   ctrlLoaded?go():loadCtrl().then(go).catch(()=>{document.getElementById('ctrlBody').innerHTML='<div style="padding:20px;color:#c0392b">Não foi possível ler a planilha. Confira se está publicada na web.</div>';});
   // atualiza o detalhe se já houver município aberto
   if(cur)openDetail(cur);
+}
+function blocoLead(m,a){
+  if(!m)return '—';
+  const mr=blocoYr(m,'mac',a).recuperar>0, pr=blocoYr(m,'pap',a).recuperar>0;
+  return mr&&pr?'MAC e PAP':mr?'MAC':pr?'PAP':'—';
+}
+function blocoPill(t){
+  if(t==='—')return '<span style="color:#aab4bf">—</span>';
+  const c=t==='MAC'?['#d6eaf8','#1a5276']:t==='PAP'?['#d4efdf','#1e8449']:['#eae5f3','#7d3c98'];
+  return '<span class="pill" style="background:'+c[0]+';color:'+c[1]+'">'+t+'</span>';
 }
 function statusColor(s){s=(s||'').toLowerCase();
   if(s.includes('conclu')||s.includes('contrat'))return['#d4efdf','#1e8449'];
@@ -436,6 +463,7 @@ function ctrlSalvar(){
   const prev=CTRL[ibge]||{};
   CTRL[ibge]={responsavel:payload.responsavel,status:payload.status,data_inicio:payload.data_inicio,
     pct_equipe:'15',pct_g3:'5',valor:prev.valor||'',observacoes:payload.observacoes,mun:nome};
+  _pendMarcar(ibge,CTRL[ibge]);  // sobrevive ao ↻ Atualizar enquanto o CSV não reflete
   renderCtrl();
   const m2=document.getElementById('addMsg');
   if(m2){m2.style.color='#1e8449';m2.textContent='✔ Salvo na planilha e atualizado na lista!';}
@@ -456,11 +484,10 @@ function ctrlEditar(ibge){
 function ctrlRemover(ibge,mun){
   if(!CTRL_SAVE_URL){alert('Gravação direta não configurada.');return;}
   if(!confirm('Remover "'+mun+'" da controladoria?\n(apaga a linha na planilha — não afeta os dados do FNS)'))return;
-  fetch(CTRL_SAVE_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:CTRL_TOKEN,action:'delete',ibge:ibge})})
-    .then(()=>new Promise(r=>setTimeout(r,2400)))
-    .then(()=>loadCtrl())
-    .then(()=>renderCtrl())
-    .catch(()=>alert('Falha ao remover. Tente de novo ou edite a planilha.'));
+  fetch(CTRL_SAVE_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:CTRL_TOKEN,action:'delete',ibge:ibge})}).catch(()=>{});
+  delete CTRL[ibge];
+  _pendMarcarDel(ibge);  // impede o lead de "ressuscitar" no ↻ enquanto o CSV não reflete
+  renderCtrl();
 }
 function renderCtrl(){
   const entries=Object.entries(CTRL);
@@ -497,7 +524,7 @@ function renderCtrl(){
     <datalist id="muniList">${D.muns.map(m=>'<option value="'+m.mun+'/'+m.uf+'">').join('')}</datalist>
     <datalist id="respList"><option value="Gerson Gomes"><option value="Chicao"><option value="Fernando Mota"><option value="Vicente"><option value="Rodolfo Pacheco"><option value="Mateus Costa"></datalist>
     <datalist id="statList"><option value="Prospecção"><option value="Em análise"><option value="Em processo"><option value="Contratado"><option value="Concluído"></datalist>
-    <table class="gtbl"><thead><tr><th>Município</th><th>Responsável</th><th>Status</th><th>Criado em</th><th>Observações</th><th class="num">Nº único (custeio)</th><th class="num">Recuperável</th><th></th></tr></thead><tbody id="ctrlRows"></tbody></table>`;
+    <table class="gtbl"><thead><tr><th>Município</th><th>Responsável</th><th>Status</th><th>Criado em</th><th>Observações</th><th class="num">Nº único (custeio)</th><th>Bloco</th><th class="num">Recuperável</th><th></th></tr></thead><tbody id="ctrlRows"></tbody></table>`;
   const draw=()=>{
     const fr=document.getElementById('ctrlResp').value, fs=document.getElementById('ctrlStat').value, a=yr();
     const tb=document.getElementById('ctrlRows');tb.innerHTML='';
@@ -515,11 +542,12 @@ function renderCtrl(){
           <td style="color:#5f6b78">${v.data_inicio?fmtDataBR(v.data_inicio):'—'}</td>
           <td style="color:#5f6b78;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${obs.replace(/"/g,'&quot;')}">${obs||'—'}</td>
           <td class="num" style="color:#7d3c98;font-weight:700">${m?fmtK(nu):'—'}</td>
+          <td>${blocoPill(blocoLead(m,a))}</td>
           <td class="num" style="color:#1e8449">${m?fmtK(rc):'—'}</td>
           <td style="text-align:center;white-space:nowrap"><button title="Editar este lead" onclick="event.stopPropagation();ctrlEditar('${k}')" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:.65;margin-right:2px">✏️</button><button title="Remover da controladoria" onclick="event.stopPropagation();ctrlRemover('${k}','${(v.mun||(m?m.mun:k)).replace(/'/g,'')}')" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:.6">🗑️</button></td>`;
         tb.appendChild(tr);
       });
-    if(!tb.children.length)tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#aab4bf;padding:16px">Nenhum município neste filtro.</td></tr>';
+    if(!tb.children.length)tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#aab4bf;padding:16px">Nenhum município neste filtro.</td></tr>';
   };
   document.getElementById('ctrlResp').onchange=draw;document.getElementById('ctrlStat').onchange=draw;draw();
 }
@@ -932,6 +960,11 @@ function propostaPDF(){
   const w=window.open('','_blank','width=900,height=760');w.document.write(html);w.document.close();setTimeout(()=>w.print(),400);
 }
 renderOverview();
+// deep link: #mun=IBGE abre direto o detalhe do município (usado no e-mail de novo lead)
+(function(){
+  const h=(location.hash||'').match(/mun=(\d{6,7})/);
+  if(h){const m=D.muns.find(x=>String(x.ibge)===h[1].slice(0,6));if(m)openDetail(m);}
+})();
 </script>
 </body></html>"""
 

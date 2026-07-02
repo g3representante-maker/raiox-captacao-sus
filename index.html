@@ -9,8 +9,9 @@
 <div class="sp"></div><div>Carregando a versão mais recente…</div>
 <script>
 // busca o número da versão sem cache e abre o app com ?v= -> garante conteúdo sempre atualizado
+// preserva o #hash (deep link p/ município, ex.: #mun=520870)
 fetch('build.txt',{cache:'no-store'}).then(r=>r.text()).then(v=>{
-  location.replace('app.html?v='+encodeURIComponent(v.trim()));
-}).catch(()=>location.replace('app.html?v='+Date.now()));
+  location.replace('app.html?v='+encodeURIComponent(v.trim())+location.hash);
+}).catch(()=>location.replace('app.html?v='+Date.now()+location.hash));
 </script>
 </body></html>
